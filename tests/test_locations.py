@@ -207,3 +207,18 @@ def test_race_never_confuses_sites_for_the_same_date():
     planned = _exams(_row("December 2, 2026", VAN, SOON))
     live = _page(_row("December 2 , 2026", NW, SOON, exam_id=22))
     assert _match_open_candidate(live, planned, BASE) is None
+
+
+def test_earliest_mode_orders_by_exam_date_not_page_order():
+    # AF lists dates as text ("December 11" before "December 2").
+    exams = _exams(
+        _row("December 11, 2026", VAN, SOON),
+        _row("December 2 , 2026", NW, SOON),
+        _row("December 2, 2026", VAN, SOON),
+    )
+    cfg = _cfg(locations=["vancouver", "new_westminster"])
+    assert [s.candidates[0].label for s in _plan_slots(exams, cfg)] == [
+        "December 2, 2026 @ vancouver",
+        "December 2, 2026 @ new_westminster",
+        "December 11, 2026 @ vancouver",
+    ]

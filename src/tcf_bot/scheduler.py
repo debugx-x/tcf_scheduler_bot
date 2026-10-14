@@ -7,8 +7,12 @@
   3. Sends Telegram a heads-up when a window is < notify_when_opens_within_hours away.
 
 This is intentionally simple: one process, blocking. If the process dies, the
-strike is lost — so the README's runbook recommends running under `caffeinate`
-inside a tmux/screen session for the actual window day.
+strike is lost. On macOS the scheduler holds its own `caffeinate` assertion so
+the machine doesn't idle- or system-sleep while it runs (system sleep is only
+blocked on AC power, and closing the lid still sleeps a laptop). The July 2026
+release was lost exactly this way: the Mac slept through the strike time and
+the job was silently dropped. Strikes now run late if the machine wakes within
+the race budget, and Telegram says so — or says the strike was missed.
 
 A PID-file lock guarantees only ONE scheduler runs at a time — the 2026-06-15
 postmortem traced a double-strike to two `tcf schedule` instances running in
@@ -19,12 +23,15 @@ from __future__ import annotations
 
 import atexit
 import os
+import shutil
 import signal
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Set
 
+from apscheduler.events import EVENT_JOB_MISSED
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -53,14 +60,67 @@ _scheduled_keys: Set[str] = set()
 LOCK_PATH = Path.home() / ".tcf-scheduler.lock"
 
 
-def _strike_job(date: str) -> None:
+def _clock(dt: datetime) -> str:
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+
+def _telegram(text: str) -> None:
+    """Best-effort Telegram message; never raises."""
+    try:
+        from .config import load_secrets
+        from .notify import _telegram_send_message
+
+        _telegram_send_message(
+            text, secrets=load_secrets(), chat_id=load_config().notifications.telegram.chat_id
+        )
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[yellow]Telegram ping failed: {exc}[/yellow]")
+
+
+def _strike_job(dates: str, scheduled_for: str) -> None:
     from .booker import strike_earliest
 
-    console.print(f"[bold green]→ Firing strike for {date}[/bold green]")
+    late = (datetime.now() - datetime.fromisoformat(scheduled_for)).total_seconds()
+    if late > 60:
+        _telegram(
+            f"⚠️ TCF strike for {dates} is starting {late / 60:.1f} min late — this "
+            f"machine was asleep or busy. Seats may already be gone."
+        )
+    console.print(f"[bold green]→ Firing strike for {dates}[/bold green]")
     try:
         strike_earliest(dry_run=False)
     except Exception as exc:  # noqa: BLE001
         console.print(f"[red]Strike crashed: {exc}[/red]")
+
+
+def _pre_strike_ping(dates: str, strike_at: str) -> None:
+    # A dead-man signal: if this message never arrives, the machine is asleep.
+    _telegram(
+        f"⏰ TCF strike at {_clock(datetime.fromisoformat(strike_at))} for {dates}. "
+        f"This machine is awake — keep it plugged in with the lid open until it's done."
+    )
+
+
+def _on_job_missed(event) -> None:
+    if not str(event.job_id).startswith("strike-"):
+        return
+    _telegram(
+        f"🚨 TCF strike scheduled for {_clock(event.scheduled_run_time)} was MISSED — "
+        f"this machine was asleep. Book manually now if seats remain."
+    )
+
+
+def _keep_awake() -> None:
+    """macOS: prevent idle/disk sleep, and system sleep on AC power, for as
+    long as this process lives (`-w` ties the assertion to our PID)."""
+    if sys.platform != "darwin" or not shutil.which("caffeinate"):
+        return
+    subprocess.Popen(
+        ["caffeinate", "-ims", "-w", str(os.getpid())],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    console.print("[dim]caffeinate: holding a no-sleep assertion while the scheduler runs[/dim]")
 
 
 def _heads_up(e: Exam) -> None:
@@ -151,10 +211,24 @@ def _refresh_and_schedule(sched: BackgroundScheduler) -> None:
         sched.add_job(
             _strike_job,
             trigger=DateTrigger(run_date=run_at),
-            args=[dates],
+            args=[dates, run_at.isoformat()],
             id=f"strike-{key}",
             replace_existing=True,
+            # Default grace is 1s: a machine that wakes even a few seconds
+            # late silently drops the strike. Run late within the race budget.
+            misfire_grace_time=max(60, cfg.strike.total_budget_seconds),
+            coalesce=True,
         )
+        ping_at = run_at - timedelta(minutes=10)
+        if ping_at > now:
+            sched.add_job(
+                _pre_strike_ping,
+                trigger=DateTrigger(run_date=ping_at),
+                args=[dates, run_at.isoformat()],
+                id=f"ping-{key}",
+                replace_existing=True,
+                misfire_grace_time=300,
+            )
         _scheduled_keys.add(key)
         console.print(
             f"[cyan]Scheduled ONE strike at {run_at.isoformat()} covering: {dates} "
@@ -245,8 +319,10 @@ def _acquire_lock() -> None:
 
 def run() -> None:
     _acquire_lock()
+    _keep_awake()
     cfg = load_config()
     sched = BackgroundScheduler()
+    sched.add_listener(_on_job_missed, EVENT_JOB_MISSED)
     sched.add_job(
         _refresh_and_schedule,
         trigger=IntervalTrigger(minutes=cfg.scout.poll_interval_minutes),

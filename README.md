@@ -68,7 +68,7 @@ The PowerShell script does the equivalent of `setup.sh`:
 | Thing | macOS | Windows |
 |---|---|---|
 | Edit config files | `open config.yaml` | `notepad config.yaml` |
-| Keep machine awake during strike | `caffeinate -i uv run tcf schedule` | `powercfg /requestsoverride PROCESS python.exe DISPLAY SYSTEM` then `uv run tcf schedule` |
+| Keep machine awake during strike | `uv run tcf schedule` | `powercfg /requestsoverride PROCESS python.exe DISPLAY SYSTEM` then `uv run tcf schedule` |
 | Long-lived session | `tmux new -s tcf` | Windows Terminal (keep tab open) or Task Scheduler |
 | Find Playwright browser window | Cmd-Tab → Chromium | Alt-Tab → "Chromium" |
 | Telegram chat_id lookup one-liner | bash quoting | PowerShell quoting (uses `` ` `` for escapes — see `setup.ps1` output) |
@@ -119,7 +119,7 @@ You have two options.
 
 ```bash
 # Run this BEFORE the registration window. Keep terminal open.
-caffeinate -i uv run tcf schedule
+uv run tcf schedule
 ```
 
 The scheduler:
@@ -155,6 +155,16 @@ uv run tcf dry-run --site sandiego
 The first dry-run also dumps every form field it encounters to
 `state/runs/<timestamp>-dry-sandiego-<id>/discovered_fields.json`. Open that file
 and add any fields you didn't anticipate to `config.yaml` under `candidate:`.
+
+## Keeping the machine awake
+
+A strike only runs if the computer is awake at the release time. On macOS,
+`tcf schedule` holds its own no-sleep assertion while it runs, but macOS still
+sleeps on **lid close** and allows system sleep **on battery** — so keep the
+laptop **plugged in with the lid open** around release time. Ten minutes
+before each strike you get a Telegram ping; if it doesn't arrive, the machine
+is asleep. A strike that starts late (machine woke up late) runs anyway and
+tells you; one that's missed entirely sends an alert.
 
 ## Choosing an exam site
 
@@ -194,7 +204,7 @@ date_strategy:
 4. If you ran `tcf schedule` already, leave it running. Otherwise start it now in tmux:
    ```bash
    tmux new -s tcf
-   caffeinate -i uv run tcf schedule
+   uv run tcf schedule
    # Detach with Ctrl-b d
    ```
 5. Plug your laptop in. Disable Wi-Fi power-saving. Close bandwidth-heavy apps.

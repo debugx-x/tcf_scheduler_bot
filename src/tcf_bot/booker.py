@@ -320,11 +320,14 @@ def _plan_slots(
         and location_rank(e, allowed) is not None
     ]
     if strategy.mode.value == "earliest_with_fallback":
+        # Earliest EXAM date first, then site preference. AF's listing sorts
+        # dates as text ("December 11" before "December 2"), so page order
+        # can't be trusted.
         pool.sort(
             key=lambda e: (
-                0 if e.status == "open" else 1,
-                e.opens_at or datetime.max,
+                parse_exam_date(e.date) or datetime.max.date(),
                 location_rank(e, allowed),
+                e.opens_at or datetime.max,
             )
         )
     return [Slot(e.date, [e]) for e in pool]
