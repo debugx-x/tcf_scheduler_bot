@@ -22,7 +22,8 @@ example-file copies, and a smoke test. Safe to re-run; never overwrites your
 filled-in `config.yaml` or `.env`.
 
 ```bash
-cd "/path/to/TCF BOT"
+git clone https://github.com/debugx-x/tcf_scheduler_bot.git
+cd tcf_scheduler_bot
 ./setup.sh
 ```
 
@@ -98,6 +99,10 @@ macOS so far.
 ## Verify it's working
 
 ```bash
+# Smoke-test everything once config.yaml and .env are filled in: config,
+# secrets, a real AF login, Telegram, and (if configured) email.
+uv run tcf preflight
+
 # Tests pass against saved AF HTML fixtures.
 uv run pytest -v
 
@@ -125,12 +130,18 @@ uv run tcf schedule
 The scheduler:
 - Re-scouts every 15 min, so newly announced windows get picked up.
 - Schedules a Strike for `(opens_at − 90 s)` for each future window.
-- Telegram-pings you when a window is < 24 h away.
-- Blocks; Ctrl-C to stop. `caffeinate -i` keeps your Mac awake.
+- Telegram-pings you when a window is < 24 h away, and again 10 min before
+  each strike.
+- Blocks; Ctrl-C to stop. On macOS it keeps the Mac awake while it runs (see
+  "Keeping the machine awake").
 
-When the strike fires, it logs into AF, lands on the TCF page 90 s early, polls
-the DOM, clicks the moment the Begin Registration link appears, fills the form,
-and pays. You'll get a Telegram + Email confirmation (with screenshot).
+When the strike fires, it logs into AF, then polls the public listing until
+the Begin Registration link appears (it never refreshes your logged-in page —
+AF warns that can cancel a reservation), opens it, fills the form, and pays.
+You get the outcome on Telegram (and email, if configured).
+
+It only strikes at **new releases**. If a window is already open with seats
+left, use Option B.
 
 ### Option B — one-shot fire (e.g. if you know the time and want manual control)
 
@@ -144,9 +155,12 @@ caffeinate -i uv run tcf strike --exam-id 42
 
 ### Dry-run
 
-Before the real window, test the full flow end-to-end against the AF San Diego
-sister site (same platform, no real exam at stake). The dry-run aborts before the
-final "Pay" click — nothing is charged.
+Before the real window, you can exercise the flow against the AF San Diego
+sister site (same platform). The dry-run aborts before the final "Pay" click —
+nothing is charged. It does click Begin Registration, which **holds a real San
+Diego seat for 10 minutes**, so run it sparingly. San Diego's form differs from
+Vancouver's (different payment processor and fields), so treat it as a smoke
+test, not proof the Vancouver strike will work.
 
 ```bash
 uv run tcf dry-run --site sandiego
@@ -194,13 +208,8 @@ date_strategy:
 
 1. `uv run tcf scout` — confirm the exam still shows in the list.
 2. `uv run tcf status` — confirm `opens_at` is what you expect.
-3. Open Telegram, confirm you can receive a message from the bot:
-   ```bash
-   uv run python -c "
-   from tcf_bot.notify import send_outcome
-   send_outcome(True, {'event': 'pre-flight check'})
-   "
-   ```
+3. `uv run tcf preflight` — all checks green (it logs in to AF for real and
+   sends you a Telegram test message).
 4. If you ran `tcf schedule` already, leave it running. Otherwise start it now in tmux:
    ```bash
    tmux new -s tcf
@@ -230,19 +239,19 @@ open it in your phone browser, complete the SMS code, and the booking lands.
 
 - **Login indicator missing**: the AF login form selectors may have shifted.
   Open `src/tcf_bot/selectors.py` and tune `login_*`. Re-run dry-run.
-- **No exam_id discovered**: the JS hasn't swapped the countdown to a link yet,
-  or the window already closed. The booker reloads ~1×/s; if 10 min pass with
-  no link, the row is given up on.
+- **No exam_id discovered**: the link hasn't appeared on the public listing yet,
+  or the exam sold out. The race polls every 250 ms; after
+  `strike.total_budget_seconds` (10 min) with no link it gives up.
 - **Telegram not delivering**: confirm chat_id by re-running the "send any message
   to your bot then /getUpdates" check in setup.
-- **`tcf schedule` died overnight**: macOS may have killed it. Use
-  `caffeinate -i` (the runbook does) and run inside tmux so a crashed terminal
-  doesn't take the process down.
+- **No 10-minute warning ping before a strike**: the machine is asleep. Wake it,
+  plug it in, keep the lid open.
+- **`tcf schedule` died**: run it inside tmux (or a Windows Terminal tab you
+  leave open) so closing a terminal doesn't kill it.
 
 ## What's NOT built (and why)
 
-By design — the original PRD described a multi-user SaaS, but this is a
-personal-use tool:
+By design — this is a personal-use tool:
 
 - No user accounts, web UI, NPS, or analytics.
 - No cloud hosting (your Mac is fine; the runbook keeps it awake).

@@ -1,52 +1,47 @@
-# Copy to config.yaml and fill in. config.yaml is gitignored.
-# Fields will expand after dry-run #1 against AF San Diego discovers
-# the real registration-form field set.
+# Copy to config.yaml (./setup.sh does this) and fill in. config.yaml is
+# gitignored. Secrets — AF login, card, Telegram token — go in .env instead.
 
 candidate:
-  # Personal — exact `name=` attributes confirmed in live SD walkthrough
-  first_name: Jane                      # registrant_first_name
-  last_name: Doe                        # registrant_last_name
-  email: you@example.com                # registrant_email
-  phone: "+1 604 555 0123"              # registrant_phone
-  date_of_birth: "Jan 15 1995"          # registrant_dob — format MMM DD YYYY
+  first_name: Jane
+  last_name: Doe
+  email: you@example.com
+  phone: "+1 604 555 0123"
+  date_of_birth: "Jan 15 1995"          # the form's format: MMM DD YYYY
   gender: ""                            # "" / "m" / "f"
 
-  # TCF identity (form asks for these)
-  # Autocomplete fields accept EITHER a single value OR a list of fallbacks.
-  # Use a list when the bilingual AF Canada site might render the option in
-  # French instead of English (e.g. "India" → "Inde", "United States" → "États-Unis").
-  passport_number: ""                   # contact_passport_number_or_id_number
+  passport_number: ""                   # as printed on your passport
   id_number: ""                         # use this instead if no passport
-  candidate_number: ""                  # contact_gael_candidate_number — blank if no previous TCF
-  mother_tongue: [Hindi, Hindi]         # same in EN/FR, but listed for clarity
-  nationality: [India, Inde]            # tries "India" first, falls back to "Inde"
-  country_of_birth: [India, Inde]
-  city_of_birth: "New Delhi"            # contact_city_of_birth — plain text input
+  candidate_number: ""                  # from a previous TCF; blank if none
 
-  # Address (Vancouver mailing address)
-  address_line1: "123 Main St"          # registrant_address_address
+  # Dropdowns. AF Canada lists these options IN FRENCH even on the English
+  # site (its own hint: "For English, search 'anglais'"). Put the French name
+  # first; a list is tried in order. Examples: India -> Inde, China -> Chine,
+  # United States -> États-Unis, English -> Anglais, Spanish -> Espagnol.
+  mother_tongue: [Hindi]
+  nationality: [Inde, India]
+  country_of_birth: [Inde, India]
+  city_of_birth: "New Delhi"            # free text
+
+  # Mailing address
+  address_line1: "123 Main St"
   address_line2: ""
-  city: Vancouver                       # registrant_address_suburb_city
-  province: BC                          # registrant_address_state
-  postal_code: V6B0A1                   # registrant_address_postcode
-  country: [Canada, Canada]             # autocomplete — same in both languages
+  city: Vancouver
+  province: BC
+  postal_code: V6B0A1
+  country: [Canada]
 
-  # Form preferences (defaults match the SD flow)
-  has_disability: ["No", "Non"]         # quote "No" — YAML 1.1 parses unquoted No as boolean false
-  how_heard:                            # checkbox group — multi-select
-    - google search                     # options: google search / student of the AFSD / newsletter of the AFSD / other
-  registration_reason: "School/studies in the country of origin"
+  has_disability: ["Non", "No"]         # keep the quotes — YAML reads bare No as false
 
-  # Required consent — must be true or form refuses to submit
+  # Required consents — the form won't submit without them.
   acknowledge_french_law: true
   agree_to_terms: true
 
-  # Additional fields appended automatically after dry-run field discovery.
+  # Fields you answer through the Telegram fallback are saved here automatically.
 
 date_strategy:
-  # earliest_with_fallback: try soonest date, fall back chronologically.
-  # Other modes (specific_date, ordered_list) supported by config model
-  # but not the default.
+  # earliest_with_fallback: book ONE exam — the earliest exam date available
+  # in the next release — then stop. To book specific dates (or several),
+  # use target_dates below instead.
   mode: earliest_with_fallback
 
   # Which AF Vancouver site(s) you'll sit the exam at, most preferred first:
@@ -58,78 +53,60 @@ date_strategy:
   # for each release and remembers what it booked (state/booked.json).
   locations: []          # e.g. [vancouver] or [new_westminster, vancouver]
 
-  # Optional exam-date filters (ISO YYYY-MM-DD). Composes with `mode` — e.g.
-  # mode=earliest_with_fallback + min_exam_date=2026-09-01 means "earliest
-  # exam on or after Sept 1, falling back chronologically within the window."
-  # Empty string = no bound.
-  min_exam_date: ""      # e.g. "2026-09-01" to skip earlier dates
-  max_exam_date: ""      # e.g. "2026-10-31" to skip later dates
+  # Optional exam-date bounds for earliest mode (ISO YYYY-MM-DD, inclusive).
+  min_exam_date: ""      # e.g. "2027-01-15" to skip earlier exams
+  max_exam_date: ""      # e.g. "2027-03-31" to skip later exams
 
-  # Book EVERY date listed here (not just the first success). Overrides
-  # `mode` and min/max when non-empty. Dates are attempted sequentially in
-  # ONE browser session — never parallel tabs (AF warns multiple tabs can
-  # cancel reservations). Mind the 20-day retake rule between sittings.
-  # Accepts "October 2, 2026" or "2026-10-02". To pick the site per date,
-  # use a mapping instead of a plain string; its `locations` replaces the
-  # global list for that date only:
+  # Book EVERY date listed here. Overrides `mode` and the bounds above when
+  # non-empty. All seats are held first, then paid one by one, in a single
+  # browser tab (AF warns that multiple tabs can cancel a reservation). Mind
+  # the 20-day retake rule between sittings. Accepts "January 15, 2027" or
+  # "2027-01-15". To choose the site for one date, use a mapping:
   #   target_dates:
-  #     - "December 2, 2026"                  # uses `locations` above
-  #     - date: "December 23, 2026"
+  #     - "January 15, 2027"                  # uses `locations` above
+  #     - date: "February 8, 2027"
   #       locations: [new_westminster]        # this date: New Westminster only
   target_dates: []
-  # If an exact target isn't available, substitute the nearest date within this
-  # many days — but only if it stays >= min_gap_days from every other booked
-  # date. 0 disables substitution (exact only).
+  # If a listed date isn't offered, book the nearest date within this many
+  # days instead — only if it stays >= min_gap_days from your other bookings.
+  # 0 = exact dates only.
   substitute_tolerance_days: 14
-  # Minimum spacing between SUBSTITUTED bookings (TCF retake rule = 20 days).
-  # Explicit exact target dates are always honored even if closer than this.
-  min_gap_days: 20
+  min_gap_days: 20       # TCF retake rule; applies to substituted dates only
 
 site:
-  # Primary target site.
   target: af_canada
-  # AF Canada base URL. Override only if the site moves.
   af_canada_base_url: "https://www.alliancefrancaise.ca"
   af_canada_tcf_path: "/en/language/exams/tcf-canada/"
-  # AF San Diego is used as the dry-run test harness (same Oncord platform).
+  # AF San Diego (same platform) is only used by `tcf dry-run --site sandiego`.
   af_sandiego_base_url: "https://www.afsandiego.org"
   af_sandiego_tcf_path: "/certifications/tcf/tcf-canada/"
 
 scout:
-  # How often Scout polls the AF page (minutes).
-  poll_interval_minutes: 15
-  # Notify when a registration window opens within this many hours.
-  notify_when_opens_within_hours: 24
+  poll_interval_minutes: 15              # how often `tcf schedule` re-checks the listing
+  notify_when_opens_within_hours: 24     # Telegram heads-up this far ahead of a release
 
 strike:
-  # Pre-warm: launch browser + login this many seconds before opens_at.
+  # Start (browser + login) this many seconds before registration opens.
   prewarm_seconds: 90
-  # Begin DOM polling for the button this many seconds before opens_at.
-  poll_lead_seconds: 2
-  # DOM polling interval during the race (milliseconds).
-  poll_interval_ms: 100
-  # If the form has a 3-D Secure step, send a Telegram link with this prefix.
-  three_ds_alert_prefix: "3DS verification required — open: "
-  # Total budget for the strike attempt before giving up (seconds).
+  # How often the race polls the public listing (milliseconds; floor 250).
+  poll_interval_ms: 250
+  # Give up on a race after this many seconds. Also how late a strike may
+  # start if the computer wakes up late.
   total_budget_seconds: 600
-  # Run headless? Recommended: SET TO FALSE FOR THE REAL STRIKE so you can
-  # watch the browser and click in it yourself if something goes wrong.
-  # Set to true only when running unattended (e.g. on a remote VM).
+  # Keep false: you can watch the browser and take over if something breaks.
   headless: false
-  # On failure, leave the Playwright Chromium window open this many seconds so
-  # you can Cmd-Tab to it and finish the booking by hand inside the 10-min
-  # candidate hold. 540s = 9 min, the natural max. Set to 0 to close immediately.
+  # On failure, leave the browser open this long so you can finish by hand
+  # inside AF's 10-minute hold. 0 closes immediately.
   keep_open_on_failure_seconds: 540
 
 notifications:
   telegram:
-    # Your Telegram chat ID (numeric). See README for setup.
-    chat_id: "123456789"
-  email:
+    chat_id: "123456789"                 # see README → Telegram bot setup
+  email:                                 # only used if SMTP is set in .env
     to: you@example.com
     from: "TCF Bot <you@example.com>"
 
 interactive_fallback:
-  # If the form contains a field not in config, the booker asks via Telegram.
+  # When the form has a field your config doesn't cover, ask via Telegram.
   enabled: true
   timeout_seconds: 120

@@ -39,15 +39,10 @@ Step "Installing Python dependencies"
 & uv sync --quiet
 Ok "Dependencies installed into .venv\"
 
-# ----- 3. Install Playwright Chromium if missing -----
+# ----- 3. Install Playwright Chromium (no-op if this revision is present) -----
 Step "Installing Playwright Chromium browser"
-$pwCache = Join-Path $env:LOCALAPPDATA "ms-playwright"
-if ((Test-Path $pwCache) -and ((Get-ChildItem $pwCache -Filter "chromium*" -ErrorAction SilentlyContinue).Count -gt 0)) {
-    Ok "Chromium already installed at $pwCache"
-} else {
-    & uv run python -m playwright install chromium
-    Ok "Chromium installed"
-}
+& uv run python -m playwright install chromium
+Ok "Chromium ready"
 
 # ----- 4. Bootstrap config.yaml -----
 Step "Bootstrapping config.yaml"

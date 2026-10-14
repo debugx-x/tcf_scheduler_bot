@@ -208,6 +208,9 @@ def _check_smtp() -> None:
     import smtplib
 
     secrets = load_secrets()
+    if not (secrets.smtp_host and secrets.smtp_user):
+        console.print("     [dim]email not configured — skipped (Telegram still works)[/dim]")
+        return
     with smtplib.SMTP(secrets.smtp_host, secrets.smtp_port, timeout=10) as smtp:
         smtp.starttls()
         smtp.login(secrets.smtp_user, secrets.smtp_pass.get_secret_value())
@@ -229,7 +232,7 @@ def run() -> int:
         ("Playwright Chromium launches", _check_playwright),
         ("AF Canada login succeeds  [dim](would catch BUG 3)[/dim]", _check_af_login),
         ("Telegram bot reachable + sends ping", _check_telegram),
-        ("SMTP creds connect + authenticate", _check_smtp),
+        ("SMTP creds connect + authenticate (optional)", _check_smtp),
     ]
     failures = 0
     for label, fn in checks:

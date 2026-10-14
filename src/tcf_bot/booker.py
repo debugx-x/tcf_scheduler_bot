@@ -1905,7 +1905,13 @@ def dry_run(site: str = "sandiego", exam_id: int | None = None) -> None:
             console.print(f"[red]exam_id={exam_id} not found on {site}[/red]")
             return
     else:
-        candidates = [e for slot in _plan_slots(exams, cfg) for e in slot.candidates]
+        if target_site == TargetSite.AF_SANDIEGO:
+            # A smoke test of the form flow: the date and site preferences in
+            # config describe AF Vancouver exams and would filter out every
+            # San Diego row.
+            candidates = [e for e in exams if not e.sold_out]
+        else:
+            candidates = [e for slot in _plan_slots(exams, cfg) for e in slot.candidates]
         target = next((e for e in candidates if e.exam_id is not None), None)
         if target is None:
             console.print(

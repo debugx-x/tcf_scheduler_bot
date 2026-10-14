@@ -41,15 +41,10 @@ step "Installing Python dependencies"
 uv sync --quiet
 ok "Dependencies installed into .venv/"
 
-# ----- 3. Install Playwright Chromium if missing -----
+# ----- 3. Install Playwright Chromium (no-op if this revision is present) -----
 step "Installing Playwright Chromium browser"
-PW_CACHE="${HOME}/Library/Caches/ms-playwright"
-if [[ -d "$PW_CACHE" ]] && ls "$PW_CACHE" 2>/dev/null | grep -qi chromium; then
-  ok "Chromium already installed at $PW_CACHE"
-else
-  uv run python -m playwright install chromium
-  ok "Chromium installed"
-fi
+uv run python -m playwright install chromium
+ok "Chromium ready"
 
 # ----- 4. Bootstrap config.yaml (no overwrite) -----
 step "Bootstrapping config.yaml"

@@ -64,6 +64,8 @@ def _telegram_send_photo(
 
 
 def _email_send(subject: str, body: str, *, secrets: Secrets, to_addr: str, from_addr: str) -> None:
+    if not (secrets.smtp_host and secrets.smtp_user):
+        return  # email not configured
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = from_addr

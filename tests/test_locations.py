@@ -222,3 +222,12 @@ def test_earliest_mode_orders_by_exam_date_not_page_order():
         "December 2, 2026 @ new_westminster",
         "December 11, 2026 @ vancouver",
     ]
+
+
+def test_unimplemented_modes_are_rejected_not_silently_ignored():
+    import pytest
+    from pydantic import ValidationError
+
+    for mode in ("specific_date", "ordered_list"):
+        with pytest.raises(ValidationError, match="not implemented"):
+            _cfg(mode=mode)

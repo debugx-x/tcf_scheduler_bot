@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, EmailStr, Field, SecretStr
+from pydantic import BaseModel, EmailStr, Field, SecretStr, model_validator
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = REPO_ROOT / "config.yaml"
@@ -104,6 +104,18 @@ class DateStrategy(BaseModel):
     # they'd violate this — it only governs auto-substitutions.
     min_gap_days: int = 20
 
+    @model_validator(mode="after")
+    def _reject_unimplemented_modes(self) -> "DateStrategy":
+        # These modes exist in the schema but nothing implements them; left
+        # unchecked they'd fall through to "book any open exam".
+        if self.mode in (DateStrategyMode.SPECIFIC_DATE, DateStrategyMode.ORDERED_LIST):
+            raise ValueError(
+                f"date_strategy.mode={self.mode.value!r} is not implemented. Use "
+                f"target_dates (books every listed date) or earliest_with_fallback "
+                f"with min_exam_date/max_exam_date."
+            )
+        return self
+
     def target_specs(self) -> list[tuple[str, list[str]]]:
         """Each target date paired with its effective location preference."""
         out: list[tuple[str, list[str]]] = []
@@ -192,7 +204,6 @@ class Secrets(BaseModel):
     card_cvv: SecretStr
     card_expiry: str
     card_holder: str
-    billing_postal: str
     telegram_bot_token: SecretStr
     smtp_host: str
     smtp_port: int
@@ -215,12 +226,12 @@ def load_secrets(env_path: Path = ENV_PATH) -> Secrets:
         card_cvv=os.environ["CARD_CVV"],
         card_expiry=os.environ["CARD_EXPIRY"],
         card_holder=os.environ["CARD_HOLDER"],
-        billing_postal=os.environ["BILLING_POSTAL"],
         telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"],
-        smtp_host=os.environ["SMTP_HOST"],
-        smtp_port=int(os.environ.get("SMTP_PORT", "587")),
-        smtp_user=os.environ["SMTP_USER"],
-        smtp_pass=os.environ["SMTP_PASS"],
+        # Email is optional: blank or missing SMTP settings disable it.
+        smtp_host=os.environ.get("SMTP_HOST", ""),
+        smtp_port=int(os.environ.get("SMTP_PORT") or "587"),
+        smtp_user=os.environ.get("SMTP_USER", ""),
+        smtp_pass=os.environ.get("SMTP_PASS", ""),
     )
 
 
